@@ -22,7 +22,7 @@
 %% @author Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %% @copyright (C) 2015, Jan Henry Nystrom <JanHenryNystrom@gmail.com>
 %%%-------------------------------------------------------------------
--module(amqp_rptocol).
+-module(amqp_protocol).
 -copyright('Jan Henry Nystrom <JanHenryNystrom@gmail.com>').
 
 %% Library functions
