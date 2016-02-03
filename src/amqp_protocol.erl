@@ -26,7 +26,7 @@
 -copyright('Jan Henry Nystrom <JanHenryNystrom@gmail.com>').
 
 %% Library functions
--export([encode/3, encode/4,
+-export([encode/2, encode/3, encode/4,
          decode/1]).
 
 %% Includes
@@ -158,12 +158,22 @@
 %% ===================================================================
 
 %%--------------------------------------------------------------------
-%% Function: encode() -> iolist()
+%% Function: encode() -> iodata()
 %% @doc
 %%   
 %% @end
 %%--------------------------------------------------------------------
--spec encode(atom(), atom(), map()) -> iolist().
+-spec encode(atom(), atom()) -> iodata().
+%%--------------------------------------------------------------------
+encode(Class, Method) -> encode(Class, Method, #{}).
+
+%%--------------------------------------------------------------------
+%% Function: encode() -> iodata()
+%% @doc
+%%   
+%% @end
+%%--------------------------------------------------------------------
+-spec encode(atom(), atom(), map()) -> iodata().
 %%--------------------------------------------------------------------
 encode(Class, Method, Args) -> encode(Class, Method, Args, #{}).
 
@@ -173,7 +183,7 @@ encode(Class, Method, Args) -> encode(Class, Method, Args, #{}).
 %%   
 %% @end
 %%--------------------------------------------------------------------
--spec encode(atom(), atom(), map(), map()) -> iolist() | binary().
+-spec encode(atom(), atom(), map(), map()) -> iodata().
 %%--------------------------------------------------------------------
 encode(Class, Method, Args, Options) ->
     case maps:get(binary, Options, false) of
@@ -362,7 +372,7 @@ decode_method(?CONNECTION, ?CONNECTION_OPEN_OK, Args) ->
     {Known, <<>>} = decode_short_string(Args),
     #{frame => method,
       class => connection,
-      method => open,
+      method => open_ok,
       known_hosts => Known}.
 
 decode_table(<<0:?LONG, T/binary>>) -> {[], T};
@@ -386,7 +396,7 @@ decode_table_value(<<$L, I:64/signed-integer, T/binary>>) -> {I, T};
 decode_table_value(<<$l, I:64/unsigned-integer, T/binary>>) -> {I, T};
 decode_table_value(<<$f, F:32/float, T/binary>>) -> {F, T};
 decode_table_value(<<$F, F:64/float, T/binary>>) -> {F, T};
-decode_table_value(<<$D,Scale,D:32/signed-integer,T/binary>>) -> {{Scale, D}, T};
+decode_table_value(<<$D,Scale,D:32/signed-integer,T/binary>>) -> {{Scale, D},T};
 decode_table_value(<<$s, Size, S:Size/unit:8, T/binary>>) -> {S, T};
 decode_table_value(<<$S, Size:?LONG, S:Size/unit:8, T/binary>>) -> {S, T};
 decode_table_value(<<$A, T/binary>>) -> decode_table(T);
@@ -396,10 +406,10 @@ decode_table_value(<<$V, T/binary>>) -> {undefined, T}.
 decode_short_string(<<Size, S:Size/bytes, T/binary>>) -> {S, T}.
 
 decode_long_string(<<Size:?LONG, S:Size/bytes, T/binary>>) -> {S, T}.
-    
+
 decode_boolean(<<0, T/binary>>) -> {false, T};
 decode_boolean(<<_, T/binary>>) -> {true, T}.
-    
+
 
 %% ===================================================================
 %% Common parts
