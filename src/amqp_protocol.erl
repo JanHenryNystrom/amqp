@@ -286,6 +286,19 @@ do_encode(connection, open_ok, Args) ->
     Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_OPEN_OK:?SHORT>>,
                encode_short_string(Known)],
     Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(connection, close, Args) ->
+    Default = #{code => 200, text => <<"">>, class => 0, method => 0},
+    #{code := Code, text := Text, class := Class, method := Method} =
+        maps:merge(Default, Args),
+    Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_CLOSE:?SHORT, Code:?SHORT>>,
+               encode_short_string(Text),
+               <<Class:?SHORT, Method:?SHORT>>],
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(connection, close_ok, #{}) ->
+    Payload = <<?CONNECTION:?SHORT, ?CONNECTION_CLOSE_OK:?SHORT>>,
+    Size = iolist_size(Payload),
     [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>].
 
 encode_table([]) -> <<0:?LONG>>.
@@ -373,7 +386,19 @@ decode_method(?CONNECTION, ?CONNECTION_OPEN_OK, Args) ->
     #{frame => method,
       class => connection,
       method => open_ok,
-      known_hosts => Known}.
+      known_hosts => Known};
+decode_method(?CONNECTION, ?CONNECTION_CLOSE, Args) ->
+    <<Code:?SHORT, T/binary>> = Args,
+    {Text, <<Class:?SHORT, Method:?SHORT>>} = decode_short_string(T),
+    #{frame => method,
+      class => connection,
+      method => close,
+      code => Code,
+      text => Text,
+      failing_class => Class,
+      failing_method => Method};
+decode_method(?CONNECTION, ?CONNECTION_CLOSE_OK, <<>>) ->
+    #{frame => method, class => connection, method => close_ok}.
 
 decode_table(<<0:?LONG, T/binary>>) -> {[], T};
 decode_table(<<Size:?LONG, TABLE:Size/unit:8, T/binary>>) ->
