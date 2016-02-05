@@ -59,16 +59,18 @@ decode_1_test_() -> [].
 %%--------------------------------------------------------------------
 %% decode(encode(Class, Method)
 %%--------------------------------------------------------------------
-encode_1_decode_test_() ->
-    [[{"connection " ++ atom_to_list(Method),
+encode_2_decode_test_() ->
+    [{"connection " ++ atom_to_list(Method),
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
                              method := Method},
                            amqp_protocol:decode(
                              iolist_to_binary(
                                amqp_protocol:encode(connection, Method)))))} ||
-         Method <- [start, tune, tune_ok, open, open_ok, close, close_ok]],
-     [[{"connection " ++ atom_to_list(Method),
+         Method <- [start, tune, tune_ok, open, open_ok, close, close_ok]].
+
+encode_3_decode_test_() ->
+    [[[{"connection " ++ atom_to_list(Method),
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
                              method := Method,

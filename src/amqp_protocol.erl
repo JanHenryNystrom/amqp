@@ -55,6 +55,12 @@
 -define(FRAME_END, 206).
 -define(REPLY_SUCCESS, 200).
 
+-define(NO_CHAN, 0).
+
+%% Deprecated
+-define(CAPABILITIES, 0).
+-define(INSIST, 0).
+
 %% Class
 -define(CONNECTION, 10).
 -define(CHANNEL, 20).
@@ -225,7 +231,7 @@ do_encode(connection, start, Args) ->
                encode_long_string(Mechanisms),
                encode_long_string(Locales)],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, start_ok, Args) ->
     Default = #{client_properties => [],
                 mechanism => <<"PLAIN">>,
@@ -240,7 +246,7 @@ do_encode(connection, start_ok, Args) ->
                encode_long_string(Response),
                encode_short_string(Locale)],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, secure, #{challange := Challange}) ->
     Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_SECURE:?SHORT>>,
                encode_long_string(Challange)],
@@ -250,7 +256,7 @@ do_encode(connection, secure_ok, #{response := Response}) ->
     Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_SECURE_OK:?SHORT>>,
                encode_long_string(Response)],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, tune, Args) ->
     Default = #{channel_max => 0, frame_max => 0, heartbeat => 0},
     #{channel_max := ChannelMax,
@@ -259,7 +265,7 @@ do_encode(connection, tune, Args) ->
     Payload = <<?CONNECTION:?SHORT, ?CONNECTION_TUNE:?SHORT,
                 ChannelMax:?SHORT, FrameMax:?LONG, HeartBeat:?SHORT>>,
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, tune_ok, Args) ->
     Default = #{channel_max => 0, frame_max => 0, heartbeat => 0},
     #{channel_max := ChannelMax,
@@ -268,25 +274,22 @@ do_encode(connection, tune_ok, Args) ->
     Payload = <<?CONNECTION:?SHORT, ?CONNECTION_TUNE_OK:?SHORT,
                 ChannelMax:?SHORT, FrameMax:?LONG, HeartBeat:?SHORT>>,
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, open, Args) ->
-    Default = #{virtual_host => <<"/">>, capabilities => <<>>, insist => false},
-    #{virtual_host := VHost,
-      capabilities := Capabilities,
-      insist := Insist} = maps:merge(Default, Args),
+    Default = #{virtual_host => <<"/">>},
+    #{virtual_host := VHost} = maps:merge(Default, Args),
     Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_OPEN:?SHORT>>,
                encode_short_string(VHost),
-               encode_short_string(Capabilities),
-               encode_boolean(Insist)],
+               <<?CAPABILITIES, ?INSIST>>],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, open_ok, Args) ->
     Default = #{known_hosts => <<>>},
     #{known_hosts := Known} = maps:merge(Default, Args),
     Payload = [<<?CONNECTION:?SHORT, ?CONNECTION_OPEN_OK:?SHORT>>,
                encode_short_string(Known)],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, close, Args) ->
     Default = #{code => 200, text => <<"">>, class => 0, method => 0},
     #{code := Code, text := Text, class := Class, method := Method} =
@@ -295,11 +298,11 @@ do_encode(connection, close, Args) ->
                encode_short_string(Text),
                <<Class:?SHORT, Method:?SHORT>>],
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 do_encode(connection, close_ok, #{}) ->
     Payload = <<?CONNECTION:?SHORT, ?CONNECTION_CLOSE_OK:?SHORT>>,
     Size = iolist_size(Payload),
-    [<<?FRAME_METHOD, 0:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>].
+    [<<?FRAME_METHOD, ?NO_CHAN:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>].
 
 encode_table([]) -> <<0:?LONG>>.
 
