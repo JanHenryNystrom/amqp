@@ -40,24 +40,36 @@
 
 %% Defines
 
+-define(LITERAL_AMQP, <<"AMQP">>).
+-define(PROTOCOL_ID, <<0>>).
+-define(PROTOCOL_VERSION, <<0, 9, 1>>).
+-define(PROTOCOL_HEADER, [?LITERAL_AMQP, ?PROTOCOL_ID, ?PROTOCOL_VERSION]).
+
 %% -----------
 %% Field sizes.
 %% -----------
 
 -define(SHORT, 16/unsigned-integer).
 -define(LONG, 32/unsigned-integer).
+-define(LLONG, 64/unsigned-integer).
 
+%% -----------
+%% FRAME TYPES.
+%% -----------
 -define(FRAME_METHOD, 1).
 -define(FRAME_HEADER, 2).
 -define(FRAME_BODY, 3).
 -define(FRAME_HEARTBEAT, 8).
--define(FRAME_MIN_SIZE, 4096).
 -define(FRAME_END, 206).
+-define(FRAME_MIN_SIZE, 4096).
+
+
 -define(REPLY_SUCCESS, 200).
 
 -define(NO_CHAN, 0).
 
 %% Deprecated
+-define(WEIGHT, 0).
 -define(CAPABILITIES, 0).
 -define(INSIST, 0).
 -define(KNOWN_HOSTS, 0).
@@ -222,6 +234,45 @@ decode(Bin) -> do_decode(Bin).
 %% Encoding
 %% ===================================================================
 
+%%
+%% -------------------------------------------------------------------
+%% Content-Header
+%% -------------------------------------------------------------------
+%%
+do_encode(content, header, Args) ->
+    Default = #{content_body_size => 0,
+                property_flags => 0,
+                property_list => <<>>},
+    #{content_class := Class, %% Method frames class
+      content_body_size := BodySize,
+      property_flags := Flags,
+      property_list := List,
+      channel := Channel} = maps:merge(Default, Args),
+    Payload =
+        [<<Class:?SHORT, ?WEIGHT:?SHORT, BodySize:?LLONG, Flags:?SHORT>>, List],
+    Size = iolist_size(Payload),
+    [<<?FRAME_HEADER, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+%%
+%% -------------------------------------------------------------------
+%% Content-Body
+%% -------------------------------------------------------------------
+%%
+do_encode(content, body, Args) ->
+    Default = #{payload => <<>>},
+    #{payload := Payload, channel := Channel} = maps:merge(Default, Args),
+    Size = iolist_size(Payload),
+    [<<?FRAME_BODY, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+%%
+%% -------------------------------------------------------------------
+%% Heartbeat
+%% -------------------------------------------------------------------
+%%
+do_encode(heartbeat, _, _) ->
+    [<<?FRAME_HEARTBEAT, 0:?SHORT, 0:?LONG, ?FRAME_END>>];
+%%
+%% -------------------------------------------------------------------
+%% Methods
+%% -------------------------------------------------------------------
 %%
 %% Connection
 %%
@@ -602,7 +653,7 @@ do_encode(basic, deliver, Args) ->
       routing_key := RoutingKey} = maps:merge(Default, Args),
     Payload = [<<?BASIC:?SHORT, ?BASIC_DELIVER:?SHORT>>,
                encode_short_string(ConsumerTag),
-               <<DeliveryTag:64>>,
+               <<DeliveryTag:?LLONG>>,
                encode_flags([Redelivered]),
                encode_short_string(Exchange),
                encode_short_string(RoutingKey)],
@@ -628,7 +679,7 @@ do_encode(basic, get_ok, Args) ->
       exchange := Exchange,
       routing_key := RoutingKey,
       message_count := Count} = maps:merge(Default, Args),
-    Payload = [<<?BASIC:?SHORT, ?BASIC_GET_OK:?SHORT, DeliveryTag:64>>,
+    Payload = [<<?BASIC:?SHORT, ?BASIC_GET_OK:?SHORT, DeliveryTag:?LLONG>>,
                encode_flags([Redelivered]),
                encode_short_string(Exchange),
                encode_short_string(RoutingKey),
@@ -643,7 +694,7 @@ do_encode(basic, ack, Args) ->
     Default = #{multiple => false},
     #{channel := Channel, delivery_tag := DeliveryTag, multiple := Multiple} =
         maps:merge(Default, Args),
-    Payload = [<<?BASIC:?SHORT, ?BASIC_ACK:?SHORT, DeliveryTag:64>>,
+    Payload = [<<?BASIC:?SHORT, ?BASIC_ACK:?SHORT, DeliveryTag:?LLONG>>,
                encode_flags([Multiple])],
     Size = iolist_size(Payload),
     [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
@@ -651,7 +702,7 @@ do_encode(basic, reject, Args) ->
     Default = #{requeue => false},
     #{channel := Channel, delivery_tag := DeliveryTag, requeue := Requeue} =
         maps:merge(Default, Args),
-    Payload = [<<?BASIC:?SHORT, ?BASIC_REJECT:?SHORT, DeliveryTag:64>>,
+    Payload = [<<?BASIC:?SHORT, ?BASIC_REJECT:?SHORT, DeliveryTag:?LLONG>>,
                encode_flags([Requeue])],
     Size = iolist_size(Payload),
     [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
@@ -759,6 +810,24 @@ encode_flags(Flags) ->
 %% Decoding
 %% ===================================================================
 
+do_decode(<<?FRAME_HEARTBEAT, 0:?SHORT, 0:?LONG, ?FRAME_END>>) ->
+    #{frame => heartbeat};
+do_decode(<<?FRAME_HEADER, Chan:?SHORT, Size:?LONG,
+            Payload:Size/bytes, ?FRAME_END>>) ->
+    <<Class:?SHORT,
+      ?WEIGHT:?SHORT,
+      BodySize:?LLONG,
+      Flags:?SHORT,
+      List/binary>> = Payload,
+    #{frame => header,
+      channel => Chan,
+      class => Class,
+      content_body_size => BodySize,
+      property_flags => Flags,
+      property_list => List};
+do_decode(<<?FRAME_BODY, Chan:?SHORT, Size:?LONG,
+            Payload:Size/bytes, ?FRAME_END>>) ->
+    #{frame => body, channel => Chan, payload => Payload};
 do_decode(<<?FRAME_METHOD, Chan:?SHORT, Size:?LONG,
             Payload:Size/bytes, ?FRAME_END>>) ->
     <<Class:?SHORT, Method:?SHORT, Args/binary>> = Payload,
@@ -1047,7 +1116,7 @@ decode_method(?BASIC, ?BASIC_RETURN, <<Code:?SHORT, Args/binary>>) ->
       exchange => Exchange,
       routing_key => RoutingKey};
 decode_method(?BASIC, ?BASIC_DELIVER, Args) ->
-    {ConsumerTag, <<DeliveryTag:64, _:7, Redelivered:1, T/binary>>} =
+    {ConsumerTag, <<DeliveryTag:?LLONG, _:7, Redelivered:1, T/binary>>} =
         decode_short_string(Args),
     {Exchange, T1} = decode_short_string(T),
     {RoutingKey, <<>>} = decode_short_string(T1),
@@ -1067,7 +1136,7 @@ decode_method(?BASIC, ?BASIC_GET, <<_:?SHORT, Args/binary>>) ->
       queue => Queue,
       no_ack => decode_bit(NoAck)};
 decode_method(?BASIC, ?BASIC_GET_OK, Args) ->
-    <<DeliveryTag:64, _:7, Redelivered:1, T/binary>> = Args,
+    <<DeliveryTag:?LLONG, _:7, Redelivered:1, T/binary>> = Args,
     {Exchange, T1} = decode_short_string(T),
     {RoutingKey, <<Count:?SHORT>>} = decode_short_string(T1),
     #{frame => method,
@@ -1080,13 +1149,13 @@ decode_method(?BASIC, ?BASIC_GET_OK, Args) ->
       message_count => Count};
 decode_method(?BASIC, ?BASIC_GET_EMPTY, <<?CLUSTER_ID>>) ->
     #{frame => method, class => basic, method => get_empty};
-decode_method(?BASIC, ?BASIC_ACK, <<DeliveryTag:64, _:7, Multiple:1>>) ->
+decode_method(?BASIC, ?BASIC_ACK, <<DeliveryTag:?LLONG, _:7, Multiple:1>>) ->
     #{frame => method,
       class => basic,
       method => ack,
       delivery_tag => DeliveryTag,
       multiple => decode_bit(Multiple)};
-decode_method(?BASIC, ?BASIC_REJECT, <<DeliveryTag:64, _:7, Requeue:1>>) ->
+decode_method(?BASIC, ?BASIC_REJECT, <<DeliveryTag:?LLONG, _:7, Requeue:1>>) ->
     #{frame => method,
       class => basic,
       method => reject,

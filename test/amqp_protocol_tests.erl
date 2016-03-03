@@ -29,6 +29,7 @@
 -include_lib("eunit/include/eunit.hrl").
 
 %% Defines
+-define(BASIC, 60).
 
 %% ===================================================================
 %% Tests.
@@ -61,6 +62,11 @@ decode_1_test_() -> [].
 %%--------------------------------------------------------------------
 encode_2_decode_test_() ->
     [
+     [{"heartbeat",
+       ?_test(?assertMatch(#{frame := heartbeat},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(heartbeat, none)))))}],
      [{"connection " ++ atom_to_list(Method),
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
@@ -81,7 +87,17 @@ encode_2_decode_test_() ->
 
 encode_3_decode_test_() ->
     ServerProperties = #{host => <<"zaark.com">>},
-    [{"connection start",
+    [
+     [{"content " ++ atom_to_list(Part),
+       ?_test(?assertMatch(#{frame := Part},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(content,
+                                                    Part,
+                                                   #{channel => 4711,
+                                                     content_class => ?BASIC}))
+                            )))} || Part <- [header, body]],
+     {"connection start",
       ?_test(
            ?assertMatch(#{frame := method,
                           class := connection,
