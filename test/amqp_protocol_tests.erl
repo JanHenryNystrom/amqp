@@ -217,7 +217,9 @@ encode_3_decode_test_() ->
                                amqp_protocol:encode(basic,
                                                     Method,
                                                     #{channel => 4711})))))}
-      || Method <- [qos, qos_ok, publish]],
+      || Method <- [qos, qos_ok,
+                    publish, get_empty,
+                    recover_async, recover, recover_ok]],
      [{"basic " ++ atom_to_list(Method),
       ?_test(?assertMatch(#{frame := method,
                             class := basic,
@@ -285,7 +287,18 @@ encode_3_decode_test_() ->
                                                     Method,
                                                     #{channel => 4711,
                                                       delivery_tag => 100})))))}
-      || Method <- [get_ok]]
+      || Method <- [get_ok, ack, reject]],
+     [{"tx " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := tx,
+                            method := Method,
+                            channel := 4711},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(tx,
+                                                    Method,
+                                                    #{channel => 4711})))))}
+      || Method <- [select, select_ok, commit, commit_ok, rollback,rollback_ok]]
     ].
 
 %% ===================================================================

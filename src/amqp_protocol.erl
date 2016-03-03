@@ -66,6 +66,7 @@
 -define(TICKET, 0).
 -define(AUTO_DELETE, false).
 -define(INTERVAL, false).
+-define(CLUSTER_ID, 0).
 
 %% Class
 -define(CONNECTION, 10).
@@ -633,6 +634,71 @@ do_encode(basic, get_ok, Args) ->
                encode_short_string(RoutingKey),
                <<Count:?SHORT>>],
     Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, get_empty, #{channel := Channel}) ->
+    Payload = <<?BASIC:?SHORT, ?BASIC_GET_EMPTY:?SHORT, ?CLUSTER_ID>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, ack, Args) ->
+    Default = #{multiple => false},
+    #{channel := Channel, delivery_tag := DeliveryTag, multiple := Multiple} =
+        maps:merge(Default, Args),
+    Payload = [<<?BASIC:?SHORT, ?BASIC_ACK:?SHORT, DeliveryTag:64>>,
+               encode_flags([Multiple])],
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, reject, Args) ->
+    Default = #{requeue => false},
+    #{channel := Channel, delivery_tag := DeliveryTag, requeue := Requeue} =
+        maps:merge(Default, Args),
+    Payload = [<<?BASIC:?SHORT, ?BASIC_REJECT:?SHORT, DeliveryTag:64>>,
+               encode_flags([Requeue])],
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, recover_async, Args) ->
+    Default = #{requeue => false},
+    #{channel := Channel, requeue := Requeue} = maps:merge(Default, Args),
+    Payload = [<<?BASIC:?SHORT, ?BASIC_RECOVER_ASYNC:?SHORT>>,
+               encode_flags([Requeue])],
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, recover, Args) ->
+    Default = #{requeue => false},
+    #{channel := Channel, requeue := Requeue} = maps:merge(Default, Args),
+    Payload = [<<?BASIC:?SHORT, ?BASIC_RECOVER:?SHORT>>,
+               encode_flags([Requeue])],
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(basic, recover_ok, #{channel := Channel}) ->
+    Payload = <<?BASIC:?SHORT, ?BASIC_RECOVER_OK:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+%%
+%% Connection
+%%
+do_encode(tx, select, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_SELECT:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(tx, select_ok, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_SELECT_OK:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(tx, commit, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_COMMIT:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(tx, commit_ok, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_COMMIT_OK:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(tx, rollback, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_ROLLBACK:?SHORT>>,
+    Size = iolist_size(Payload),
+    [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
+do_encode(tx, rollback_ok, #{channel := Channel}) ->
+    Payload = <<?TX:?SHORT, ?TX_ROLLBACK_OK:?SHORT>>,
+    Size = iolist_size(Payload),
     [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>].
 
 encode_table(Map) when map_size(Map) == 0 -> <<0:?LONG>>;
@@ -1011,7 +1077,48 @@ decode_method(?BASIC, ?BASIC_GET_OK, Args) ->
       redelivered => decode_bit(Redelivered),
       exchange => Exchange,
       routing_key => RoutingKey,
-      message_count => Count}.
+      message_count => Count};
+decode_method(?BASIC, ?BASIC_GET_EMPTY, <<?CLUSTER_ID>>) ->
+    #{frame => method, class => basic, method => get_empty};
+decode_method(?BASIC, ?BASIC_ACK, <<DeliveryTag:64, _:7, Multiple:1>>) ->
+    #{frame => method,
+      class => basic,
+      method => ack,
+      delivery_tag => DeliveryTag,
+      multiple => decode_bit(Multiple)};
+decode_method(?BASIC, ?BASIC_REJECT, <<DeliveryTag:64, _:7, Requeue:1>>) ->
+    #{frame => method,
+      class => basic,
+      method => reject,
+      delivery_tag => DeliveryTag,
+      requeue => decode_bit(Requeue)};
+decode_method(?BASIC, ?BASIC_RECOVER_ASYNC, <<_:7, Requeue:1>>) ->
+    #{frame => method,
+      class => basic,
+      method => recover_async,
+      requeue => decode_bit(Requeue)};
+decode_method(?BASIC, ?BASIC_RECOVER, <<_:7, Requeue:1>>) ->
+    #{frame => method,
+      class => basic,
+      method => recover,
+      requeue => decode_bit(Requeue)};
+decode_method(?BASIC, ?BASIC_RECOVER_OK, <<>>) ->
+    #{frame => method, class => basic, method => recover_ok};
+%%
+%% TX
+%%
+decode_method(?TX, ?TX_SELECT, <<>>) ->
+    #{frame => method, class => tx, method => select};
+decode_method(?TX, ?TX_SELECT_OK, <<>>) ->
+    #{frame => method, class => tx, method => select_ok};
+decode_method(?TX, ?TX_COMMIT, <<>>) ->
+    #{frame => method, class => tx, method => commit};
+decode_method(?TX, ?TX_COMMIT_OK, <<>>) ->
+    #{frame => method, class => tx, method => commit_ok};
+decode_method(?TX, ?TX_ROLLBACK, <<>>) ->
+    #{frame => method, class => tx, method => rollback};
+decode_method(?TX, ?TX_ROLLBACK_OK, <<>>) ->
+    #{frame => method, class => tx, method => rollback_ok}.
 
 decode_table(<<0:?LONG, T/binary>>) -> {#{}, T};
 decode_table(<<Size:?LONG, TABLE:Size/binary, T/binary>>) ->
