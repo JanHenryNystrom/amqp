@@ -60,17 +60,40 @@ decode_1_test_() -> [].
 %% decode(encode(Class, Method)
 %%--------------------------------------------------------------------
 encode_2_decode_test_() ->
-    [{"connection " ++ atom_to_list(Method),
+    [
+     [{"connection " ++ atom_to_list(Method),
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
                              method := Method},
                            amqp_protocol:decode(
                              iolist_to_binary(
                                amqp_protocol:encode(connection, Method)))))} ||
-         Method <- [start, tune, tune_ok, open, open_ok, close, close_ok]].
+         Method <- [start, tune, tune_ok, open, open_ok, close, close_ok]],
+     [{"channel " ++ atom_to_list(Method),
+       ?_test(?assertMatch(#{frame := method,
+                             class := channel,
+                             method := Method},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(channel, Method)))))} ||
+         Method <- [open]]
+     ].
 
 encode_3_decode_test_() ->
-    [[[{"connection " ++ atom_to_list(Method),
+    ServerProperties = #{host => <<"zaark.com">>},
+    [{"connection start",
+      ?_test(
+           ?assertMatch(#{frame := method,
+                          class := connection,
+                          method := start,
+                          server_properties := ServerProperties},
+                        amqp_protocol:decode(
+                          iolist_to_binary(
+                            amqp_protocol:encode(connection,
+                                                 start,
+                                                 #{server_properties =>
+                                                       ServerProperties})))))},
+     [{"connection " ++ atom_to_list(Method),
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
                              method := Method,
@@ -82,7 +105,7 @@ encode_3_decode_test_() ->
                                                     #{response =>
                                                           <<"OPAQUE">>})))))}
        || Method <- [start_ok, secure_ok]],
-      {"connection secure",
+     {"connection secure",
        ?_test(?assertMatch(#{frame := method,
                              class := connection,
                              method := secure,
@@ -92,8 +115,177 @@ encode_3_decode_test_() ->
                                amqp_protocol:encode(connection,
                                                     secure,
                                                     #{challange =>
-                                                          <<"OPAQUE">>})))))}
-     ]
+                                                          <<"OPAQUE">>})))))},
+     [{"channel " ++ atom_to_list(Method),
+       ?_test(?assertMatch(#{frame := method,
+                             class := channel,
+                             method := Method,
+                             channel := 4711},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(channel,
+                                                    Method,
+                                                    #{channel => 4711})))))}
+      || Method <- [open_ok, flow, flow_ok, close, close_ok]],
+     [{"exchange " ++ atom_to_list(Method),
+       ?_test(?assertMatch(#{frame := method,
+                             class := exchange,
+                             method := Method,
+                             channel := 4711,
+                             exchange := <<"mix">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(exchange,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      exchange => <<"mix">>
+                                                     })))))}
+      || Method <- [declare, delete]],
+     [{"exchange " ++ atom_to_list(Method),
+       ?_test(?assertMatch(#{frame := method,
+                             class := exchange,
+                             method := Method,
+                             channel := 4711},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(exchange,
+                                                    Method,
+                                                    #{channel => 4711})))))}
+      || Method <- [declare_ok, delete_ok]],
+     [{"queue " ++ atom_to_list(Method),
+       ?_test(?assertMatch(#{frame := method,
+                             class := queue,
+                             method := Method,
+                             channel := 4711,
+                             queue := <<"mix">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(queue,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      queue => <<"mix">>
+                                                     })))))}
+      || Method <- [declare, declare_ok, purge, delete]],
+     [{"queue " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := queue,
+                            method := Method,
+                            channel := 4711,
+                            exchange := <<"mix">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(queue,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      exchange => <<"mix">>
+                                                     })))))}
+      || Method <- [bind]],
+     [{"queue " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := queue,
+                            method := Method,
+                            channel := 4711,
+                            queue := <<"mix">>,
+                            exchange := <<"mix">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(queue,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      queue => <<"mix">>,
+                                                      exchange => <<"mix">>
+                                                     })))))}
+      || Method <- [unbind]],
+     [{"queue " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := queue,
+                            method := Method,
+                            channel := 4711},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(queue,
+                                                    Method,
+                                                    #{channel => 4711})))))}
+      || Method <- [bind_ok, unbind_ok, purge_ok, delete_ok]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711})))))}
+      || Method <- [qos, qos_ok, publish]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711,
+                            queue := <<"mix">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      queue => <<"mix">>})))))}
+      || Method <- [consume, get]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711,
+                            consumer_tag := <<"tag">>},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      consumer_tag =>
+                                                          <<"tag">>})))))}
+      || Method <- [consume_ok, cancel, cancel_ok]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711,
+                            code := 313},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      code => 313})))))}
+      || Method <- [return]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711,
+                            consumer_tag := <<"foo">>,
+                            delivery_tag := 100},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      consumer_tag => <<"foo">>,
+                                                      delivery_tag => 100})))))}
+      || Method <- [deliver]],
+     [{"basic " ++ atom_to_list(Method),
+      ?_test(?assertMatch(#{frame := method,
+                            class := basic,
+                            method := Method,
+                            channel := 4711,
+                            delivery_tag := 100},
+                           amqp_protocol:decode(
+                             iolist_to_binary(
+                               amqp_protocol:encode(basic,
+                                                    Method,
+                                                    #{channel => 4711,
+                                                      delivery_tag => 100})))))}
+      || Method <- [get_ok]]
     ].
 
 %% ===================================================================
