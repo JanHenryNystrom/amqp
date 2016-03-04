@@ -49,6 +49,7 @@
 %% Field sizes.
 %% -----------
 
+-define(OCTET, 8/unsigned-integer).
 -define(SHORT, 16/unsigned-integer).
 -define(LONG, 32/unsigned-integer).
 -define(LLONG, 64/unsigned-integer).
@@ -149,6 +150,24 @@
 -define(BASIC_RECOVER, 110).
 -define(BASIC_RECOVER_OK, 111).
 
+%% Basic Properties
+-define(BASIC_PROPERTIES,
+        [{content_type, short},
+         {content_encoding, short},
+         {headers, table},
+         {delivery_mode, octet},
+         {priority, octet},
+         {correlation_id, short},
+         {reply_to, short},
+         {expiration, short},
+         {message_id, short},
+         {timestamp, timestamp},
+         {type, short},
+         {user_id, short},
+         {app_id, short},
+         {cluster_id, short}
+        ]).
+
 %% TX
 -define(TX_SELECT, 10).
 -define(TX_SELECT_OK, 11).
@@ -240,16 +259,16 @@ decode(Bin) -> do_decode(Bin).
 %% -------------------------------------------------------------------
 %%
 do_encode(content, header, Args) ->
-    Default = #{content_body_size => 0,
-                property_flags => 0,
-                property_list => <<>>},
+    Default = #{content_body_size => 0, properties => #{}},
     #{content_class := Class, %% Method frames class
       content_body_size := BodySize,
-      property_flags := Flags,
-      property_list := List,
+      properties := Properties,
       channel := Channel} = maps:merge(Default, Args),
+    {PropertyFlags, PropertyList} = encode_properties(Class, Properties),
     Payload =
-        [<<Class:?SHORT, ?WEIGHT:?SHORT, BodySize:?LLONG, Flags:?SHORT>>, List],
+        [<<Class:?SHORT, ?WEIGHT:?SHORT, BodySize:?LLONG>>,
+         PropertyFlags,
+         PropertyList],
     Size = iolist_size(Payload),
     [<<?FRAME_HEADER, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>];
 %%
@@ -752,6 +771,29 @@ do_encode(tx, rollback_ok, #{channel := Channel}) ->
     Size = iolist_size(Payload),
     [<<?FRAME_METHOD, Channel:?SHORT, Size:?LONG>>, Payload, <<?FRAME_END>>].
 
+encode_properties(_, #{}) -> {<<0:?SHORT>>, <<>>};
+encode_properties(basic, Properties) ->
+    encode_properties(?BASIC_PROPERTIES, Properties, <<>>, <<>>);
+encode_properties(_, _) ->
+    erlang:error(badarg).
+
+encode_properties([], _, Flags, List) -> {<<Flags/binary, 0:2>>, List};
+encode_properties([{Name, Type} | T], Properties, Flags, List) ->
+    case maps:get(Name, Properties, undefined) of
+        undefined ->
+            encode_properties(T, Properties, <<Flags/binary, 0:1>>, List);
+        Value ->
+            List1 = encode_property(Type, Value, List),
+            encode_properties(T, Properties, <<Flags/binary, 1:1>>, List1)
+    end.
+
+encode_property(octet, Octet, List) -> <<List/binary, Octet:?OCTET>>;
+encode_property(timestamp, Stamp, List) -> <<List/binary, Stamp:?LLONG>>;
+encode_property(short, String, List) ->
+    <<List/binary, (encode_short_string(String))/binary>>;
+encode_property(table, Table, List) ->
+    <<List/binary, (encode_table(Table))/binary>>.
+
 encode_table(Map) when map_size(Map) == 0 -> <<0:?LONG>>;
 encode_table(Map) ->
     Encoded  = maps:fold(fun encode_table/3, [], Map),
@@ -817,14 +859,13 @@ do_decode(<<?FRAME_HEADER, Chan:?SHORT, Size:?LONG,
     <<Class:?SHORT,
       ?WEIGHT:?SHORT,
       BodySize:?LLONG,
-      Flags:?SHORT,
+      Flags:2/binary,
       List/binary>> = Payload,
     #{frame => header,
       channel => Chan,
       class => Class,
       content_body_size => BodySize,
-      property_flags => Flags,
-      property_list => List};
+      properties => decode_properties(Class, Flags, List)};
 do_decode(<<?FRAME_BODY, Chan:?SHORT, Size:?LONG,
             Payload:Size/bytes, ?FRAME_END>>) ->
     #{frame => body, channel => Chan, payload => Payload};
@@ -832,6 +873,24 @@ do_decode(<<?FRAME_METHOD, Chan:?SHORT, Size:?LONG,
             Payload:Size/bytes, ?FRAME_END>>) ->
     <<Class:?SHORT, Method:?SHORT, Args/binary>> = Payload,
     maps:put(channel, Chan, decode_method(Class, Method, Args)).
+
+decode_properties(_, <<0:16>>, <<>>) ->#{};
+decode_properties(basic, Flags, List) ->
+    decode_properties(?BASIC_PROPERTIES, Flags, List, #{});
+decode_properties(_, _, _) ->
+    erlang:error(badarg).
+
+decode_properties([], <<>>, <<>>, Properties) -> Properties;
+decode_properties([_ | T], <<0:1, Flags/binary>>, List, Properties) ->
+    decode_properties(T, Flags, List, Properties);
+decode_properties([{Name, Type} | T], <<_:1, Flags/binary>>, List,Properties) ->
+    {Value, List1} = decode_property(Type, List),
+    decode_properties(T, Flags, List1, maps:put(Name, Value, Properties)).
+
+decode_property(octet, <<Octet:?OCTET, T/binary>>) -> {Octet, T};
+decode_property(timestamp, <<Stamp:?LLONG, T/binary>>) -> {Stamp, T};
+decode_property(short, List) -> decode_short_string(List);
+decode_property(table, List) -> decode_table(List).
 
 %%
 %% Connection
